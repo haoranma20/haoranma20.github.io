@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#fcfcfa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<title>Strong-field ionization with bright squeezed vacuum · Haoran Ma</title>
+<meta name="description" content="Strong-field ionization of xenon by bright squeezed vacuum and a coherent laser of the same color: the photoelectrons follow the squeezed light's quadrature along the laser field.">
+<meta name="author" content="Haoran Ma">
+<meta property="og:title" content="Strong-field ionization with bright squeezed vacuum">
+<meta property="og:description" content="Strong-field ionization of xenon by bright squeezed vacuum and a coherent laser of the same color: the photoelectrons follow the squeezed light's quadrature along the laser field.">
+<meta property="og:type" content="article">
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../../assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css?v=20261111b">
+<link rel="canonical" href="https://haoranma20.github.io/projects/bsv-ionization/">
+<meta property="og:url" content="https://haoranma20.github.io/projects/bsv-ionization/">
+<meta property="og:site_name" content="Haoran Ma">
+<meta property="og:image" content="https://haoranma20.github.io/assets/bsv-setup.png">
+<meta property="og:image:width" content="1400">
+<meta property="og:image:height" content="737">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body class="note">
+<nav class="topnav" aria-label="Breadcrumb"><a href="../../">Haoran Ma</a><span aria-hidden="true">/</span><a href="../../#research">Research</a></nav>
+<main>
+<article>
+<header class="note-head">
+<h1>Strong-field ionization with bright squeezed vacuum</h1>
+<p class="note-meta">Stanford · Bucksbaum group, Stanford PULSE Institute · 2025–present</p>
+
+</header>
+
+<figure><a href="../../assets/bsv-setup.png"><img src="../../assets/bsv-setup.png" width="1400" height="737" alt="Setup schematic: an 800 nm, 70 fs laser is frequency-doubled and drives parametric down-conversion to make bright squeezed vacuum (BSV); BSV and a delayed coherent beam are focused into xenon inside a velocity-map imaging spectrometer with an MCP and Timepix3 detector, while a camera reads the BSV field on the same shot."></a>
+<figcaption>Setup (schematic). The BSV and a coherent 800&nbsp;nm field are focused together into xenon; a camera reads the BSV field on the same shot as the electrons.</figcaption></figure>
+
+<h2>The question</h2>
+<p>Bright squeezed vacuum (BSV) is light with zero mean field whose noise is reduced in one quadrature and amplified in the other. Recent experiments have shown that its strong photon-number noise changes strong-field processes such as high-harmonic generation, photoemission from metal tips and the ionization of atoms. Those experiments recorded the size of the noise but not its phase dependence. Here a coherent field of the same color serves as the phase reference, and the question is which part of the BSV noise the photoelectrons respond to.</p>
+
+<h2>The experiment</h2>
+<p>The output of a Ti:sapphire amplifier at 800&nbsp;nm is split in two. One beam is frequency-doubled and pumps degenerate parametric down-conversion in two BBO crystals, which makes the BSV; the other beam is the coherent field, much stronger than the BSV. The two are combined and focused into xenon in a velocity-map imaging spectrometer, where an MCP–Timepix3 detector records the photoelectrons.</p>
+<p>Pick-offs of both beams form Newton rings on a camera. One Fourier coefficient of each frame gives the BSV amplitude and its phase relative to the coherent field, so the field is known on every shot of the 1&nbsp;kHz laser and is paired with the electrons of the same shot. This readout, UNWRAP, is described in its own preprint (<a href="https://arxiv.org/abs/2610.30005">arXiv:2610.30005</a>).</p>
+<figure class="narrow"><a href="../../assets/bsv-state.png"><img src="../../assets/bsv-state.png" width="901" height="667" loading="lazy" alt="Phase-space density of the BSV field recorded by the camera: a thin horizontal ellipse, about two rms units wide along the real axis and a few tenths along the imaginary axis, with g(2) = 2.91 ± 0.01."></a>
+<figcaption>The BSV field as the camera records it, accumulated over many shots: a thin ellipse in phase space, wide along the noisy axis and narrow along the quiet one. From this shape alone the intensity correlation is g<sup>(2)</sup>&nbsp;=&nbsp;2.91, close to 3 for an ideal squeezed state (thermal light gives 2). From the <a href="https://arxiv.org/abs/2610.31811">Letter</a>, Fig.&nbsp;1b.</figcaption></figure>
+<p>The relative phase of the two beams drifts freely during a run, so sorting the shots by the measured phase picks out two selections of the same light. With the noisy axis of the BSV along the coherent field, the noise goes into the amplitude of the total field while its zero crossings stay fixed (phase-squeezed light); with the noisy axis across the field, the noise shifts the zero crossings and leaves the amplitude almost unchanged (amplitude-squeezed light).</p>
+<p>On average only about one electron is detected in every 30 shots, so nearly all of the shot-to-shot scatter in the count is counting noise, along with fluctuations of the laser pulse and the gas density that do not follow the BSV field. The shots are binned by their measured field, and the variance of the bin-averaged yield, with the finite-sample term subtracted, gives the part of the yield noise that follows the field. The uncertainties are standard deviations over bootstrap resamples of 60&nbsp;s data blocks.</p>
+
+<h2>What we found</h2>
+<p>The field-correlated rms noise of the yield, relative to the coherent-only yield, falls from about 40% for phase-squeezed light to about 10% for amplitude-squeezed light. Relative to all BSV shots, the mean square of the BSV quadrature along the coherent field, measured by the camera, is 1.54 times larger in the phase-squeezed selection and 0.12 times as large in the amplitude-squeezed one, while the field-correlated variance of the electron yield changes by factors of 1.44 and 0.19. The optical and electron factors agree qualitatively, so what the electrons measure is mainly the BSV quadrature along the coherent field.</p>
+<figure class="wide"><a href="../../assets/bsv-noise-vs-angle.png"><img src="../../assets/bsv-noise-vs-angle-800.png" srcset="../../assets/bsv-noise-vs-angle-800.png 800w, ../../assets/bsv-noise-vs-angle.png 1600w" sizes="(max-width: 640px) 680px, (max-width: 46rem) 100vw, 46rem" width="1600" height="595" loading="lazy" alt="Left: sketches of the total field for phase-squeezed light (red curves differing in height) and amplitude-squeezed light (blue curves shifted in time). Right: rms noise of the photoelectron yield relative to the coherent-only yield against the squeezing angle from 0 to 90 degrees, falling from about 0.41 to about 0.10, with a prediction curve following the points."></a>
+<figcaption>(a) With phase-squeezed light (red) the shots differ mainly in the height of the field; with amplitude-squeezed light (blue) they are shifted in time instead. (b) The part of the electron yield&rsquo;s noise that follows the BSV field, against the squeezing angle φ: about 40% for phase-squeezed light, falling to about 10% for amplitude-squeezed light. The line is the prediction for noise set by the BSV quadrature along the coherent field. From the <a href="https://arxiv.org/abs/2610.31811">Letter</a>, Fig.&nbsp;2.</figcaption></figure>
+<p>The BSV field is small, about 2.6% of the coherent field amplitude (rms, uncertain by about a quarter), yet it changes the total yield by about a third (rms over shots).</p>
+<p>Resolved over the photoelectron spectrum, the noise is not uniform. It is largest for the non-resonant electrons, smaller at the 4f Freeman resonance and almost zero at the 5f resonance: using all BSV shots, without sorting by phase, the normalized variance g<sup>(2)</sup>−1 is 0.51 for the non-resonant electrons, 0.17 at the 4f peak and 0.015 at the 5f peak. A time-dependent Schrödinger equation (TDSE) calculation, averaged over the focal volume, reproduces this pattern with one free parameter, the BSV field strength, which comes out at 2.9%, close to the camera's 2.6%.</p>
+<figure class="wide"><a href="../../assets/bsv-channel-noise.webp"><img src="../../assets/bsv-channel-noise-800.webp" srcset="../../assets/bsv-channel-noise-800.webp 800w, ../../assets/bsv-channel-noise.webp 1600w" sizes="(max-width: 640px) 680px, (max-width: 46rem) 100vw, 46rem" width="1600" height="595" loading="lazy" alt="Three panels. Left: xenon photoelectron momentum image with concentric above-threshold-ionization rings, measured and Abel-inverted halves, with the 4f and 5f resonances marked. Middle: maps of the change of the noise for phase-squeezed (red, increased) and amplitude-squeezed (blue, decreased) light. Right: energy spectrum folded onto one order with the 4f and 5f positions marked, and below it the noise for the three selections, highest for phase-squeezed light and lowest for amplitude-squeezed light, with TDSE curves."></a>
+<figcaption>(a) The measured photoelectron momentum image of xenon (left half) and its Abel inversion (right half); each ring is one above-threshold-ionization order, with the 4f and 5f Freeman resonances marked. (b) How the noise changes at each momentum when the shots are sorted into phase-squeezed (left) and amplitude-squeezed (right) light. (c) The spectrum with all orders folded onto one (top) and its noise for the three selections (bottom): largest for the non-resonant electrons below the 4f peak and nearly zero at 5f. Lines: the TDSE calculation. From the <a href="https://arxiv.org/abs/2610.31811">Letter</a>, Fig.&nbsp;3.</figcaption></figure>
+<p>The channels differ in how they depend on intensity. Non-resonant electrons come from near the peak intensity, where the ionization rate rises most steeply. A Freeman channel is populated only where the pulse reaches the intensity that brings a Rydberg state into resonance, so its yield changes mainly through the size of the focal volume at that intensity. For the 4f state this is a small volume near the focal center, which a small rise in peak intensity enlarges strongly; for the 5f state it is a much larger volume, which the same rise barely changes. Because the BSV changes the intensity by only a few percent, the noise in each channel measures how steeply that channel's yield depends on intensity.</p>
+
+<h2>What comes next</h2>
+<p>What the electrons registered is the amplitude noise of the light. Its phase noise has not shown up yet, but strong-field ionization depends on the phase of the field within the optical cycle, so the phase noise should become visible in the electrons as well, and the atom would then read out both quadratures of the squeezed light.</p>
+
+<h2>My part</h2>
+<p>I built this experiment, including the single-shot readout; I run the measurements and analyze the data.</p>
+
+<h2>Papers and talk</h2>
+<ul>
+<li><b>H. Ma</b> et al., <a href="https://arxiv.org/abs/2610.31811">“Photoelectrons resolve the phase-dependent variance of bright squeezed vacuum.”</a> Submitted to <i>Physical Review Letters</i>; <a href="https://arxiv.org/abs/2610.31811">arXiv:2610.31811</a> (2026).</li>
+<li><b>H. Ma</b> et al., <a href="https://arxiv.org/abs/2610.30005">“UNWRAP: Single-shot phase analysis of bright squeezed vacuum by Newton-ring interferometry.”</a> <a href="https://arxiv.org/abs/2610.30005">arXiv:2610.30005</a> (2026).</li>
+<li>Two-color strong-field ionization with non-classical light. Oral talk, APS DAMOP 2026.</li>
+</ul>
+
+<p class="back"><a href="../../#research">← Back to all research</a></p>
+</article>
+</main>
+<footer class="site-foot"><p>Haoran Ma · <a href="mailto:mahr@stanford.edu">mahr@stanford.edu</a> · <a href="../../Haoran_Ma_CV.pdf">CV (PDF)</a></p></footer>
+</body>
+</html>

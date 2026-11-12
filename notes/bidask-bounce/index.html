@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#fcfcfa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<title>Bid-ask bounce masquerading as factor-neutral alpha · Haoran Ma</title>
+<meta name="description" content="A post-mortem of a short-horizon factor-neutral selection model whose backtested Sharpe of 3.5 turned out to be the bid-ask bounce.">
+<meta name="author" content="Haoran Ma">
+<meta property="og:title" content="Bid-ask bounce masquerading as factor-neutral alpha">
+<meta property="og:description" content="A post-mortem of a short-horizon factor-neutral selection model whose backtested Sharpe of 3.5 turned out to be the bid-ask bounce.">
+<meta property="og:type" content="article">
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../../assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<link rel="stylesheet" href="../../style.css?v=20261111b">
+<link rel="canonical" href="https://haoranma20.github.io/notes/bidask-bounce/">
+<meta property="og:url" content="https://haoranma20.github.io/notes/bidask-bounce/">
+<meta property="og:site_name" content="Haoran Ma">
+<meta property="og:image" content="https://haoranma20.github.io/notes/bidask-bounce/hero_sharpe_flip.png">
+<meta property="og:image:width" content="1413">
+<meta property="og:image:height" content="592">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body class="note">
+<nav class="topnav" aria-label="Breadcrumb"><a href="../../">Haoran Ma</a><span aria-hidden="true">/</span><a href="../">Notes</a></nav>
+<main>
+<article>
+<header class="note-head">
+<h1>Bid-ask bounce masquerading as factor-neutral alpha</h1>
+<p class="note-meta">July 6, 2026</p>
+<p class="note-desc">A post-mortem of a short-horizon factor-neutral selection model whose backtested Sharpe of 3.5 turned out to be the bid-ask bounce.</p>
+</header>
+<h2 id="1-introduction">1. Introduction</h2>
+<p>I wanted a market-neutral equity sleeve — something whose returns were uncorrelated with the index, so I could stack it on top of a long book without adding beta. The plan was straightforward and, at the time, felt principled:</p>
+<ol>
+<li>Start from the Fama-French factors, but build them out of <em>tradeable</em> instruments so that the "residual" I isolate is the P&amp;L of a hedge I could actually put on.</li>
+<li>For every stock, every day, estimate its factor exposures and strip them out, leaving a factor-neutral residual return I'll call its <em>alpha</em>.</li>
+<li>Train a model to predict which stocks will have high forward residual alpha, and hold the top of that ranking each day.</li>
+</ol>
+<p>This post walks through what I built, the backtest numbers it produced, and — because those numbers were too good — what happened when I looked at where the return was actually coming from. I'm writing it in the order the investigation actually unfolded.</p>
+<h2 id="2-background">2. Background</h2>
+<h3 id="21-fama-french-factors-and-residual-alpha">2.1 Fama-French factors and residual alpha</h3>
+<p>The Fama-French program decomposes a stock's return into systematic factor exposures plus an idiosyncratic residual:</p>
+<p>\[r_{i,t} = \alpha_i + \sum_k \beta_{i,k}\, f_{k,t} + \varepsilon_{i,t}.\]</p>
+<p>The classic factors are the market (CAPM), then size and value (Fama-French three-factor), then momentum (Carhart), and later profitability and investment (the five-factor model). Once you regress a stock on the factors, the part that isn't explained — the residual \(\varepsilon_{i,t}\) — is what practitioners loosely call "alpha": the return you earned that the known risk premia don't account for. A market-neutral book tries to hold residual alpha while netting out the \(\beta_{i,k} f_{k,t}\) terms.</p>
+<h3 id="22-from-academic-factors-to-a-tradeable-risk-model">2.2 From academic factors to a tradeable risk model</h3>
+<p>The academic factors are long-short paper portfolios. If I hedge against them, I can't actually trade the hedge. So I replaced the main factors with <em>tradeable</em> proxies — an ETF or an ETF spread — and added a few risk controls the classic set leaves out. The result is a seven-factor daily model:</p>
+<div class="table-wrap" role="region" tabindex="0" aria-label="Table"><table>
+<thead>
+<tr>
+<th>factor</th>
+<th>instrument (proxy)</th>
+<th>what it controls for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>market</td>
+<td>SPY</td>
+<td>broad market beta</td>
+</tr>
+<tr>
+<td>sector</td>
+<td>the stock's own SPDR sector ETF, market-hedged (\(s - b\cdot\text{MKT}\))</td>
+<td>industry beta</td>
+</tr>
+<tr>
+<td>rates</td>
+<td>IEF</td>
+<td>duration / rate sensitivity</td>
+</tr>
+<tr>
+<td>USD</td>
+<td>UUP</td>
+<td>dollar sensitivity</td>
+</tr>
+<tr>
+<td>size</td>
+<td>IWM − IWB</td>
+<td>small-minus-large</td>
+</tr>
+<tr>
+<td>value</td>
+<td>IWD − IWF</td>
+<td>value-minus-growth</td>
+</tr>
+<tr>
+<td>momentum</td>
+<td>MTUM</td>
+<td>momentum</td>
+</tr>
+</tbody>
+</table></div>
+<p>The point of using tradeable legs is that the residual is no longer an abstraction: it is (to first order) the return of a book that is <em>long the stock and short a basket of ETFs</em> in the estimated exposure ratios. That is a position I could actually hold, so if the residual carries alpha, it's alpha I could actually harvest. Tradeability, in other words, was baked in at the factor level from the start — which makes the punchline of this post more embarrassing, not less.</p>
+<h2 id="3-data-and-methodology">3. Data and methodology</h2>
+<h3 id="31-data">3.1 Data</h3>
+<p>CRSP daily stock file, 2000–2025: roughly 50M security-days. The fields that matter here are the daily return <code>DlyRet</code>, the closing price <code>DlyPrc</code>, the open <code>DlyOpen</code>, and the closing quote <code>DlyBid</code> / <code>DlyAsk</code>.</p>
+<h3 id="32-factor-construction-and-rolling-betas">3.2 Factor construction and rolling betas</h3>
+<p>I build the seven daily factor-return series, then for every stock estimate its betas on a trailing one-year window (252 days, minimum 126) with a ridge penalty (\(\lambda = 0.10\)) on the correlation-scaled system, refreshed every trading day. Subtracting the fitted factor return from the raw return gives the stock's daily residual alpha — the hedge P&amp;L.</p>
+<h3 id="33-tradeable-universe">3.3 Tradeable universe</h3>
+<p>Common US stocks only: share type <code>NS</code>, US-incorporated, <code>CORP</code>/<code>REIT</code> issuers. ETFs, funds, and ADRs are excluded. A loose liquidity gate (at least &#36;1M of daily dollar volume, or an unusual volume or price spike) drops only the most illiquid names.</p>
+<h3 id="34-label">3.4 Label</h3>
+<p>For each stock-day I sum the next few days of factor-neutral residual alpha into a forward label. In the model this post is about, the horizon was <strong>5 trading days</strong> — a deliberately short horizon, since I was after fast-mean-reverting residual mispricings.</p>
+<h3 id="35-features">3.5 Features</h3>
+<p>Each training sample is the trailing 120-day sequence of the stock's own residual alpha and its log dollar volume. So the model sees a stock's recent idiosyncratic-return path and its liquidity, and nothing else.</p>
+<h3 id="36-model-and-selection">3.6 Model and selection</h3>
+<p>A GRU (hidden size 128, two layers) is trained as a top-vs-bottom classifier: each day the top 20% of names by forward residual alpha are positives, the bottom 20% negatives, and the model learns to separate them. Everything is walk-forward — out-of-sample years 2018–2025, retraining on the prior five years and rolling forward. In the backtest the rule is simple: each day, score every eligible stock, and hold the top <strong>K = 40</strong> long-only, rebalancing daily.</p>
+<h2 id="4-the-backtest-looked-excellent">4. The backtest looked excellent</h2>
+<p>On a close-to-close basis the numbers were the kind you don't quite believe. The plain 1-day-hold, daily-rebalanced top-40 book compounds &#36;1 into roughly &#36;180 over eight out-of-sample years — an annualized Sharpe of <strong>3.5</strong>, against <strong>0.7</strong> for SPY over the same window (a triple-barrier hold with take-profit / stop-loss lands in the same range). The daily information coefficient is small but stable and positive.</p>
+<figure><a href="equity_curve.png"><img src="equity_curve.png" width="1075" height="581" alt="Cumulative growth of $1: the top-40 long book (1-day hold, marked at the printed close) versus SPY, 2018–2025 out-of-sample." loading="lazy" decoding="async"></a><figcaption>Cumulative growth of &#36;1: the top-40 long book (1-day hold, marked at the printed close) versus SPY, 2018–2025 out-of-sample.</figcaption></figure>
+<p>A Sharpe of 3.5 is, if real, extremely valuable. So before getting excited I went looking for where the return actually came from. The first place to look was the price series itself.</p>
+<h2 id="5-a-detour-into-crsp-prices">5. A detour into CRSP prices</h2>
+<p>Two facts about the CRSP daily file matter for anything measured at the daily close.</p>
+<p><strong>The return is built from the closing price plus dividends.</strong> <code>DlyRet</code> is a total return, but the price it uses is <code>DlyPrc</code>.</p>
+<p><strong><code>DlyPrc</code> is, almost always, the last trade of the day.</strong> It is not the midpoint of the closing quote — it's whatever price the final transaction printed at. And a transaction prints where it crosses the book: at the bid if it was a sell, at the ask if it was a buy. For a liquid name with a penny-wide market, the last trade usually sits <em>on</em> the bid or <em>on</em> the ask, almost never at the middle.</p>
+<p>You can see this directly. If I locate each day's close within its own closing spread —</p>
+<p>\[\text{loc} = \frac{\text{close} - \text{bid}}{\text{ask} - \text{bid}},\]</p>
+<p>— a value of 0 means the close printed at the bid, 1 means at the ask, 0.5 at the mid. If the close were the fair value itself, the midpoint, <code>loc</code> would cluster around 0.5. It does not:</p>
+<figure><a href="close_in_spread.png"><img src="close_in_spread.png" width="1023" height="581" alt="Where the daily close sits inside its own closing spread, loc = (close − bid) / (ask − bid), by price tier." loading="lazy" decoding="async"></a><figcaption>Where the daily close sits inside its own closing spread, <code>loc = (close − bid) / (ask − bid)</code>, by price tier. The mass piles up at 0 and 1 — the close collapses onto the bid or the ask — rather than at the mid.</figcaption></figure>
+<p>Because the close is a last trade that lands on the bid or the ask more or less at random, the closing price carries a \(\pm\tfrac{1}{2}\text{spread}\) jitter <em>on top of</em> fair value. The obvious question is how big that jitter is next to a real day's move. If I compare the round-trip spread you'd actually pay against the size of a typical daily move (measured on the bounce-free midpoint), the spread turns out to be a large fraction of a single day's move — about 40% for sub-&#36;5 names — and only becomes negligible for the most expensive, liquid names:</p>
+<figure><a href="bounce_vs_move.png"><img src="bounce_vs_move.png" width="1145" height="581" alt="Median size, by price tier, of a typical day&#x27;s real move (midpoint-to-midpoint) versus the bid-ask spread paid on a round trip." loading="lazy" decoding="async"></a><figcaption>Median size, by price tier, of a typical day's real move (midpoint-to-midpoint) versus the bid-ask spread paid on a round trip. At a 1-day horizon the spread is a large slice of the move; it is a one-time cost, so a longer holding period dilutes it while the real move keeps growing.</figcaption></figure>
+<p>That is the crux. Over a single day, the spread you pay is comparable to the move you're trying to capture — so a daily-rebalanced signal priced off the close is competing, one-for-one, with the bounce. Over a twenty-day hold the real move keeps growing while the spread is paid only once, which is exactly why the fix in §8 lengthens the horizon. With that in mind, the smoking gun.</p>
+<h2 id="6-where-the-return-actually-came-from">6. Where the return actually came from</h2>
+<h3 id="61-the-edge-lives-entirely-overnight">6.1 The edge lives entirely overnight</h3>
+<p>If the return came from the closing print itself, it should show up almost entirely in the overnight gap right after that print. I split each 1-day return into the overnight leg (\(\text{close}_t \to \text{open}_{t+1}\)) and the intraday leg (\(\text{open}_{t+1} \to \text{close}_{t+1}\)):</p>
+<div class="table-wrap" role="region" tabindex="0" aria-label="Table"><table>
+<thead>
+<tr>
+<th>leg</th>
+<th style="text-align: right;">mean return</th>
+<th style="text-align: right;">annualized Sharpe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>overnight <code>close → open</code></td>
+<td style="text-align: right;">+24 bp</td>
+<td style="text-align: right;">+5.8</td>
+</tr>
+<tr>
+<td>intraday <code>open → close</code></td>
+<td style="text-align: right;">−2 bp</td>
+<td style="text-align: right;">−0.3</td>
+</tr>
+</tbody>
+</table></div>
+<p>Essentially all of the edge is in the overnight gap the night I rebalance; the intraday leg is, if anything, slightly negative. That means the edge is only available if you fill at the closing print itself — enter at the next open instead and it's gone. A short-horizon edge that lives entirely in one overnight jump is the first sign something is wrong.</p>
+<h3 id="62-paying-the-ask-inverts-the-sign">6.2 Paying the ask inverts the sign</h3>
+<p>The decisive test. <code>DlyPrc</code> is the last trade, but I don't get to transact at the last trade — I pay the <strong>ask</strong> to buy and receive the <strong>bid</strong> to sell. CRSP carries the closing quote, so I can re-mark the same holdings at the prices I'd actually fill at:</p>
+<div class="table-wrap" role="region" tabindex="0" aria-label="Table"><table>
+<thead>
+<tr>
+<th>accounting</th>
+<th style="text-align: right;">mean 1-day return</th>
+<th style="text-align: right;">annualized Sharpe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>printed close</td>
+<td style="text-align: right;">+27 bp</td>
+<td style="text-align: right;">+3.5</td>
+</tr>
+<tr>
+<td>buy at ask, sell at close</td>
+<td style="text-align: right;">−49 bp</td>
+<td style="text-align: right;">−6.6</td>
+</tr>
+<tr>
+<td>buy at ask, sell at bid</td>
+<td style="text-align: right;">−102 bp</td>
+<td style="text-align: right;">−12.7</td>
+</tr>
+</tbody>
+</table></div>
+<figure class="wide"><a href="hero_sharpe_flip.png"><img src="hero_sharpe_flip.png" width="1413" height="592" alt="The same signal, marked two ways." loading="lazy" decoding="async"></a><figcaption>The same signal, marked two ways. Left: mean 1-day return under three accounting choices. Right: annualized Sharpe on the printed close versus at executable prices.</figcaption></figure>
+<p>The entire edge is not just erased but reversed. The 129 bp swing from the printed close to a real round trip is, by construction, the round-trip spread the book actually pays — and that it exceeds the whole close-price edge is the tell that the <em>selection</em> is the problem. The signal is preferentially picking names that closed near the bid — a depressed close makes the forward residual look large and positive — so the "overnight gain" is just those closes bouncing back up across the very spread you must cross to get in.</p>
+<h3 id="63-what-the-model-selects">6.3 What the model selects</h3>
+<p>Start with the day it makes its choice. The picks lean toward that day's losers: they close down about <strong>161 bp</strong> on the selection day, against <strong>+19 bp</strong> for the eligible pool. A depressed residual looks like a large positive forward alpha, so the model reaches for the names that just fell.</p>
+<figure><a href="picks_selection_day.png"><img src="picks_selection_day.png" width="1023" height="555" alt="Return on the selection day, top-40 picks versus the eligible pool." loading="lazy" decoding="async"></a><figcaption>Return on the selection day, top-40 picks versus the eligible pool. The model leans toward the day's losers.</figcaption></figure>
+<p>A name can fall on the day and still close anywhere in its spread, so the next question is <em>where in the spread</em> the picks close. They lean toward the bid — a median location of 0.37 versus 0.50 for the pool — and the lean is sharply stronger the cheaper (and wider-spread) the name: sub-&#36;5 picks close at a mean location of 0.36 with a 136 bp spread, while &#36;20+ picks close roughly at the mid with a 16 bp spread.</p>
+<figure class="wide"><a href="picks_close_location.png"><img src="picks_close_location.png" width="1415" height="555" alt="Left: where the picks close inside their spread, versus the pool — picks lean toward the bid." loading="lazy" decoding="async"></a><figcaption>Left: where the picks close inside their spread, versus the pool — picks lean toward the bid. Right: the same, split by price tier — the cheaper the pick, the closer to the bid it prints and the wider its spread.</figcaption></figure>
+<p>Put those two facts together — the picks are cheap, wide-spread names that closed low in their spread — and it turns out you don't need a model to collect what follows. Throw the GRU away and just equal-weight long <em>every</em> eligible stock that closed at the bid, rebalanced daily. On the printed close that blunt rule compounds &#36;1 into &#36;16 at a Sharpe of 1.4. The model's Sharpe-3.5 book looks like a sharper version of the same trade, concentrated in the cheapest, widest-spread names, where the effect is biggest.</p>
+<figure><a href="naive_bid_long.png"><img src="naive_bid_long.png" width="1075" height="581" alt="Equal-weight long of every eligible stock that closed at the bid, 1-day hold, daily rebalance." loading="lazy" decoding="async"></a><figcaption>Equal-weight long of every eligible stock that closed at the bid, 1-day hold, daily rebalance. On the printed close (top) it makes money with no modelling at all; marked at real ask/bid (bottom) the identical rule bleeds out.</figcaption></figure>
+<p>Marked at real ask/bid, that same blind rule bleeds steadily downward — the first hint of what is really going on, which §6.4 makes precise and §7 explains.</p>
+<h3 id="64-why-the-model-learned-the-bid">6.4 Why the model learned the bid</h3>
+<p>Strip the model down and its edge reduces to a single instruction: <em>buy today's losers.</em> On a close-price backtest that instruction pays — but not because beaten-down stocks rebound. It pays because "today's loser" and "tomorrow's winner" are the same fact read twice. The whole causal chain fits on one page:</p>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+    C([&quot;Stock closes at the BID&lt;br/&gt;(low in its own spread)&quot;]):::cause
+    C --&gt; T[&quot;Today&#x27;s return looks LOW&quot;]
+    C --&gt; N[&quot;Tomorrow&#x27;s close: a fresh bid/ask coin flip&lt;br/&gt;(recovers half a spread on average)&quot;]
+    T --&gt; L[&quot;tagged: today&#x27;s loser&quot;]
+    N --&gt; W[&quot;tagged: tomorrow&#x27;s winner&lt;br/&gt;(printed close only)&quot;]
+    L --&gt; MIR[&quot;&#x27;losers rebound&#x27;:&lt;br/&gt;one bounce counted twice,&lt;br/&gt;NOT mean reversion&quot;]:::key
+    W --&gt; MIR
+    R[&quot;Real residual alpha is below the spread,&lt;br/&gt;so the bounce is the biggest&lt;br/&gt;signal in a close-based label&quot;]:::faint
+    R -.-&gt; MOD
+    MIR --&gt; MOD[&quot;Model learns:&lt;br/&gt;buy the bid-closers&quot;]
+    MOD --&gt; OK[&quot;On the printed close:&lt;br/&gt;Sharpe 3.5&quot;]:::good
+    MOD --&gt; NO[&quot;Buy ask / sell bid:&lt;br/&gt;spread paid, edge gone&quot;]:::bad
+    classDef cause fill:#e15759,stroke:#b03a3c,color:#fff;
+    classDef key fill:#f4d06f,stroke:#c9a227,color:#000;
+    classDef good fill:#2a9d8f,stroke:#1f7a6e,color:#fff;
+    classDef bad fill:#8d99ae,stroke:#333,color:#fff;
+    classDef faint fill:#f3f3f3,stroke:#bbb,color:#333;</pre><figcaption>One microstructure state — closing at the bid — produces both halves of the apparent edge, which a close-based label then rewards.</figcaption></figure>
+<p>The fact is <em>where the stock closed in its spread.</em> A name that closed at the bid did two things at once: it printed a low close, which drags <strong>today's</strong> return down, and it left itself half a spread of room to hop back up, which lifts <strong>tomorrow's</strong> close return. Sort every stock-day by that closing location and the two returns are mirror images — today's return climbs from bid to ask while tomorrow's close return falls (left panel). Neither is information. They are one microstructure state — the bid — showing up as a loss today and a "gain" tomorrow. This is why the label the model trains on (a forward residual alpha built from <em>closing prices</em>) is negatively related to the day's own return: not mean reversion, but a single bounce counted at both ends.</p>
+<figure class="wide"><a href="label_vs_return.png"><img src="label_vs_return.png" width="1531" height="581" alt="Left: sorted by where the stock closed in its spread, today&#x27;s return (blue) and tomorrow&#x27;s close return (red) are mirror images — closing at the bid makes today look bad and tomorrow look good." loading="lazy" decoding="async"></a><figcaption>Left: sorted by where the stock closed in its spread, today's return (blue) and tomorrow's close return (red) are mirror images — closing at the bid makes today look bad and tomorrow look good. Right: that "tomorrow" gain lives only on the printed close; re-marked at real ask/bid prices the bid-to-ask slope flattens, and the whole line sits below zero — you always pay the spread.</figcaption></figure>
+<p>Two things make this a trap rather than a strategy. First, it is purely a close-price effect: re-mark tomorrow at real ask/bid (right panel) and the bid-to-ask slope collapses — the correlation between the closing location and tomorrow's return goes from about −0.05 on the close to roughly zero at ask/bid, and every bucket sits in the red because you have paid the spread to get in. Second, the genuine alpha underneath is tiny: the per-name effect is a few basis points, smaller than the spread itself, so in a label built from closing prices the bounce is simply the largest predictable signal on offer. A learner minimizing error on that label has nothing better to find. It doesn't rediscover mean reversion; it rediscovers the bid — and, as in §6.3, it sharpens the thin, universe-wide bounce into a Sharpe-3.5 book by crowding into the cheap, wide-spread names where the half-spread is biggest.</p>
+<h2 id="7-random-walk-not-mean-reversion">7. Random walk, not mean reversion</h2>
+<p>§6.4 showed the pattern; it's worth being exact about the process behind it, because the two stories on offer — mean reversion and a random walk — are indistinguishable for a single day and opposite thereafter. Write the observed close as an efficient price plus the bounce:</p>
+<p>\[\text{close}_t = P_t + s_t \cdot \tfrac{1}{2}\text{spread}, \qquad s_t = \pm 1 \ \text{at random}.\]</p>
+<p>\(P_t\) is the midpoint, the fair price, and it is a <strong>random walk</strong>: its expected next change is zero, it has no memory, nothing pulls it back toward where it has been. The only quantity that "reverts" is \(s_t\) — which side of the spread the last trade happened to print on — and it reverts only because it is mean-zero noise.</p>
+<p>Now condition on exactly what the signal keys on. Buying a name that closed at the bid means conditioning on \(s_t = -1\). Its expected next close is</p>
+<p>\[\mathbb{E}[\text{close}_{t+1} \mid s_t=-1] = \underbrace{\mathbb{E}[P_{t+1}]}_{=\,P_t} + \tfrac{1}{2}\text{spread}\cdot\underbrace{\mathbb{E}[s_{t+1}]}_{=\,0} = \text{close}_t + \tfrac{1}{2}\text{spread}.\]</p>
+<p>The close is expected to rise by half a spread — but read the algebra before calling it mean reversion, and note <em>expected</em> is doing real work. \(\mathbb{E}[P_{t+1}] = P_t\): the fair price is going nowhere. The whole expected "gain" is the bounce term \(-s_t\cdot\tfrac12\text{spread}\), and it is an <strong>average over tomorrow's coin flip, not a move any single stock makes.</strong> Tomorrow's last trade prints at the bid or the ask with equal odds, so measured from today's bid close the recovery is <em>either nothing or a full spread</em> — half a spread is only the mean of those two outcomes. Nothing pulls the price up; I have sorted on the down-draw of a coin and am watching mean-zero noise revert, in expectation, to its mean. This is the formal version of §6.4's mirror image: the loss today and the "gain" tomorrow are the same draw \(s_t\) read with two signs.</p>
+<p>That distinction is testable, and the test is decisive because the two processes diverge after day one. Genuine mean reversion of \(P\) pulls <em>proportionally</em> to how far the price has strayed and keeps pulling for several days — a slow, multi-day decay. The bounce does the opposite: it is one step, capped at the spread no matter how dislocated the residual looks, and finished by the next bar. Tracing the forward path of bid-closers against ask-closers shows precisely the bounce's fingerprint — the gap opens entirely on day one and then goes flat, a random walk that took a single, already-known step:</p>
+<figure><a href="reversion_vs_horizon.png"><img src="reversion_vs_horizon.png" width="1025" height="581" alt="Cumulative forward return of liquid names that closed at the bid versus at the ask, and their difference (bold)." loading="lazy" decoding="async"></a><figcaption>Cumulative forward return of liquid names that closed at the bid versus at the ask, and their difference (bold). The two raw paths drift up together with the market; their difference — the bounce — opens on the first day (≈ one spread) and then stays flat: a random walk with a one-step bounce, not the multi-day decay of mean reversion.</figcaption></figure>
+<p>And the arithmetic is merciless: the bounce you expect from a bid close only brings the price back to the mid, and buying at the ask puts you half a spread above the mid. The expected gain is minus half a spread before you have even sold, and minus a full spread once you sell at the bid. For anyone who has to cross the spread, capturing the bounce isn't hard, it's impossible.</p>
+<h2 id="8-fixing-it-at-the-source">8. Fixing it at the source</h2>
+<p>Once it was clear the edge was the bounce, the question was whether <em>any</em> real residual alpha survived underneath it. I attacked it at the source with two changes:</p>
+<ol>
+<li><strong>Lengthen the horizon</strong> from 5 to 20 days, so a one-bar microstructure artifact is diluted by real holding-period return.</li>
+<li><strong>Make the label itself tradeable</strong> — define the forward alpha as <em>buy at the closing ask on day \(t\), sell at the closing bid on day \(t+20\)</em>, folding the round-trip spread directly into the training target so the model is rewarded only for alpha that survives the spread.</li>
+</ol>
+<p>Retraining on this label did remove the bounce. The realized round-trip spread of the top-40 book fell from <strong>134 bp</strong> (the old model, hunting near-bid names) to <strong>14 bp</strong> (tight, liquid names), and marking at real ask/bid no longer flipped the sign. But the honest result was thin: long-only Sharpe around <strong>+0.18</strong>, and hedged, around <strong>0</strong>. Averaged across all names, the 20-day tradeable alpha went from +33 bp on close accounting to −1.4 bp once the spread was charged. The pipeline was now honest — and honestly, this model found very little factor-neutral alpha after real costs.</p>
+<h2 id="9-takeaways">9. Takeaways</h2>
+<p>The one that generalizes: <strong>mark every equity backtest at the prices you'd actually transact at — buy at the ask, sell at the bid — from day one.</strong> The printed close is a last trade that bounces inside the spread, and any short-horizon or reversal-flavored signal will select for names sitting near the bid and manufacture an overnight return that evaporates the moment you pay the real ask.</p>
+<p>Concretely, the screen I now run on any short-horizon price signal:</p>
+<ol>
+<li><strong>Split the forward return into overnight and intraday.</strong> Edge living entirely in the first overnight leg is a red flag.</li>
+<li><strong>Re-mark the entry at the ask.</strong> If the edge shrinks a little, maybe it's real; if it inverts, it's most likely the bounce.</li>
+<li><strong>Check price and liquidity sensitivity.</strong> Edge that grows as the price floor drops and the spread widens is the classic sign of a microstructure artifact.</li>
+</ol>
+<p>And the intuition to keep: at the daily close you are looking at a random walk with a bounce, not a mean-reverting price. The escape from the bounce is slower and more liquid, not faster and higher-frequency.</p>
+<details class="callout"><summary>Reproduction notes</summary><ul>
+<li>Data: CRSP daily stock file (<code>DlyPrc</code> / <code>DlyRet</code> / <code>DlyOpen</code> / <code>DlyBid</code> / <code>DlyAsk</code>).</li>
+<li>Factor model: 7 tradeable factors (§2.2), rolling 252-day ridge betas (\(\lambda=0.10\)), residual alpha = raw − β·f.</li>
+<li>Model: GRU 128×2, top-vs-bottom BCE on the 5-day forward residual-alpha label, walk-forward OOS 2018–2025, top-K=40 long-only daily.</li>
+<li>Ask/bid accounting: <code>coa = min(close/ask, 1)</code>, <code>boc = min(bid/close, 1)</code>, round-trip mark <code>(1+ret)·boc'·coa − 1</code>.</li>
+<li>Fixed model: 20-day horizon + ask/bid-corrected label.</li>
+</ul>
+<p>All figures were computed for this post from the CRSP daily file and the model's out-of-sample scores.</p></details>
+</article>
+</main>
+<footer class="site-foot"><p>Personal research notes; not investment advice. · <a href="../../">Haoran Ma</a></p></footer>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false})"></script>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";
+mermaid.initialize({startOnLoad: false, theme: "neutral", securityLevel: "strict", flowchart: {htmlLabels: true}});
+await mermaid.run();
+// on narrow screens the diagram scrolls sideways: open it centred on the root node
+document.querySelectorAll("figure.diagram pre.mermaid").forEach(p => { p.scrollLeft = (p.scrollWidth - p.clientWidth) / 2; });
+</script>
+</body>
+</html>
